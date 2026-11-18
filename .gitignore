@@ -1,0 +1,4 @@
+out/
+*.png
+!game/**/*.png
+.DS_Store
