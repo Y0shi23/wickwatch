@@ -6,7 +6,7 @@
 
 **Wickwatch** is a twin-stick lantern-defence game for the desktop browser. You are the Wick, the last little flame on a night sea, and the Murk rises from every shore to snuff the lantern on its rock. The lantern's light is its life and also how far you can see: every hit it takes pulls the dark closer. Hold out through ten nights, take a boon at every dawn-break, and drive back the Gloam twice to see the dawn.
 
-![Wickwatch: night 10, the Gloam Unbound](screenshots/2-play.jpg)
+![Wickwatch: night 10, the Gloam Unbound](screenshots/1-play.jpg)
 
 - **Move** WASD / arrows · **aim** mouse · **shoot sparks** hold left click
 - **Dash** Space / Shift: a burst of speed that burns every shade it passes through

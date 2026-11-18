@@ -1,7 +1,7 @@
 // The HUD and the screens around play: the title, the boon choice at the end of each night, the
 // pause card and the results of a watch. All drawn on the playfield's 1280x720 coordinates.
 import { FLARE, NIGHTS, VIEW } from './config.js';
-import { boonById } from './boons.js';
+import { BOONS, boonById } from './boons.js';
 import { ENEMY_KINDS } from './enemies.js';
 import { comboMultiplier, END_DAWN, END_LANTERN } from './world.js';
 import { drawIcon } from './icons.js';
@@ -104,7 +104,60 @@ function drawWatchLog(ctx, state, centerX, y, spacing, size, next = 0) {
   }
 }
 
-/** The in-play HUD: lantern light, the Wick's hearts, the night, score and combo, flare and boons. */
+/** The stakes, always in sight: how the watch is won and how it is lost. */
+function drawStakes(ctx, x, y) {
+  const rows = [
+    ['WIN', 'keep the lantern lit through 10 nights', '#5fd38a'],
+    ['LOSE', 'lantern light hits 0, or the Wick loses every heart', '#ff6a6a'],
+  ];
+  rows.forEach(([tag, what, color], index) => {
+    const top = y + index * 26;
+    panel(ctx, x, top, 330, 22, 6, 'rgba(8, 8, 20, 0.72)');
+    panel(ctx, x, top, 48, 22, 6, color);
+    text(ctx, tag, x + 24, top + 16, 12, '#0b0b16', 'center');
+    text(ctx, what, x + 56, top + 16, 12, PALE, 'left', SANS, 'normal');
+  });
+}
+
+/** Every boon taken this watch, by name, with how many times it is stacked. */
+function drawBoonList(ctx, state, x, y) {
+  const counts = new Map();
+  for (const id of state.boons) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const height = 34 + Math.max(1, counts.size) * 22;
+  panel(ctx, x, y, 230, height, 10, 'rgba(8, 8, 20, 0.72)', 'rgba(255, 207, 122, 0.3)');
+  text(ctx, `BOONS ${state.boons.length}`, x + 12, y + 21, 12, GOLD);
+  text(ctx, `of ${BOONS.length} kinds`, x + 218, y + 21, 11, DIM, 'right', SANS, 'normal');
+  if (counts.size === 0) text(ctx, 'one at every dawn-break', x + 12, y + 46, 12, DIM, 'left', SANS, 'normal');
+  [...counts].forEach(([id, count], index) => {
+    const boon = boonById(id);
+    const row = y + 46 + index * 22;
+    const color = boon.rare ? '#c9a6ff' : GOLD;
+    drawIcon(ctx, boon.icon, x + 20, row - 5, 15, color);
+    text(ctx, boon.name, x + 36, row, 13, boon.rare ? color : PALE, 'left', SANS, 'normal');
+    if (count > 1) text(ctx, `×${count}`, x + 218, row, 12, color, 'right');
+  });
+}
+
+/** The controls, as key caps along the bottom edge. */
+function drawControls(ctx, y) {
+  const keys = [['WASD', 'move'], ['LMB', 'sparks'], ['SPACE', 'dash'], ['RMB / E', 'flare'], ['P', 'pause'], ['M', 'sound']];
+  ctx.font = `bold 12px ${SANS}`;
+  const widths = keys.map(([key, does]) => {
+    ctx.font = `bold 12px ${SANS}`;
+    const cap = ctx.measureText(key).width + 14;
+    ctx.font = `normal 12px ${SANS}`;
+    return { cap, total: cap + 6 + ctx.measureText(does).width + 16 };
+  });
+  let x = (VIEW.width - widths.reduce((sum, item) => sum + item.total, 0)) / 2;
+  keys.forEach(([key, does], index) => {
+    panel(ctx, x, y - 15, widths[index].cap, 20, 5, 'rgba(255, 230, 190, 0.92)');
+    text(ctx, key, x + widths[index].cap / 2, y - 1, 12, '#1a1424', 'center');
+    text(ctx, does, x + widths[index].cap + 6, y - 1, 12, PALE, 'left', SANS, 'normal');
+    x += widths[index].total;
+  });
+}
+
+/** The in-play HUD: lantern light, the Wick's hearts, the stakes, the night, score and combo, flare, boons and controls. */
 export function drawHud(ctx, state, ui) {
   const top = ctx.createLinearGradient(0, 0, 0, 92);
   top.addColorStop(0, 'rgba(0, 0, 0, 0.7)');
@@ -143,16 +196,9 @@ export function drawHud(ctx, state, ui) {
   drawIcon(ctx, 'burst', 34, VIEW.height - 34, 26, ready ? `rgba(255, 220, 140, ${pulse})` : 'rgba(255, 220, 140, 0.5)');
   text(ctx, ready ? 'FLARE READY — RIGHT-CLICK / E' : 'FLARE', 56, VIEW.height - 44, 13, ready ? GOLD : DIM);
   bar(ctx, 56, VIEW.height - 36, 200, 10, state.flare / cost, '#ff9a3a', '#fff0b0');
-  const counts = new Map();
-  for (const id of state.boons) counts.set(id, (counts.get(id) ?? 0) + 1);
-  let x = VIEW.width - 30;
-  for (const [id, count] of [...counts].reverse()) {
-    const boon = boonById(id);
-    panel(ctx, x - 34, VIEW.height - 52, 34, 34, 8, 'rgba(20, 18, 34, 0.75)', 'rgba(255, 207, 122, 0.45)');
-    drawIcon(ctx, boon.icon, x - 17, VIEW.height - 35, 20, GOLD);
-    if (count > 1) text(ctx, `${count}`, x - 4, VIEW.height - 21, 11, PALE, 'right');
-    x -= 40;
-  }
+  drawStakes(ctx, 20, 92);
+  drawBoonList(ctx, state, 20, 152);
+  drawControls(ctx, VIEW.height - 14);
   if (state.banner !== null && ui.screen === 'play') {
     const fade = Math.min(1, state.banner.time, 3 - state.banner.time + 0.4);
     ctx.globalAlpha = Math.max(0, fade);
@@ -175,7 +221,7 @@ export function drawHud(ctx, state, ui) {
     ctx.lineTo(ui.mouse.x, ui.mouse.y + 15);
     ctx.stroke();
   }
-  if (ui.muted) text(ctx, 'SOUND OFF (M)', VIEW.width / 2, VIEW.height - 16, 12, DIM, 'center');
+  if (ui.muted) text(ctx, 'SOUND OFF (M)', VIEW.width / 2, VIEW.height - 40, 12, DIM, 'center');
 }
 
 function veil(ctx, alpha) {

@@ -351,7 +351,7 @@ export function createRenderer(canvas) {
     dctx.globalCompositeOperation = 'source-over';
     dctx.clearRect(0, 0, dark.width, dark.height);
     dctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
-    dctx.fillStyle = `rgba(${palette.dark}, 0.7)`;
+    dctx.fillStyle = `rgba(${palette.dark}, 0.42)`;
     dctx.fillRect(-10, -10, VIEW.width + 20, VIEW.height + 20);
     dctx.globalCompositeOperation = 'destination-out';
     const hole = (x, y, radius, strength = 1) => {
