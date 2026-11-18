@@ -19,6 +19,10 @@ export function baseMods() {
     beacon: 0,
     flareCost: 1,
     flareDamage: 1,
+    phoenix: 0,
+    choir: 0,
+    mirror: 0,
+    emberheart: 0,
   };
 }
 
@@ -37,18 +41,38 @@ export const BOONS = [
   { id: 'kindling', name: 'Kindling', text: 'Every ember feeds the lantern 2 light.', icon: 'flame', max: 2, apply: (m) => { m.kindle += 2; } },
   { id: 'beacon', name: 'Beacon Eye', text: 'The lantern itself shoots at the nearest shade.', icon: 'eye', max: 3, apply: (m) => { m.beacon += 1; } },
   { id: 'flarecraft', name: 'Flarecraft', text: 'Flares charge 30% sooner and burn twice as hot.', icon: 'burst', max: 2, apply: (m) => { m.flareCost *= 0.7; m.flareDamage *= 2; } },
+  { id: 'phoenix', name: 'Phoenix Wick', text: 'Once a night, a snuffed Wick rekindles with two hearts.', icon: 'phoenix', max: 1, rare: true, apply: (m) => { m.phoenix = 1; } },
+  { id: 'choir', name: 'Lantern Choir', text: 'The lantern sings out a ring of light that burns nearby shades.', icon: 'choir', max: 2, rare: true, apply: (m) => { m.choir += 1; } },
+  { id: 'mirror', name: 'Mirror Sparks', text: 'Sparks glance off the edge of the night and fly back in.', icon: 'mirror', max: 1, rare: true, apply: (m) => { m.mirror = 1; } },
+  { id: 'emberheart', name: 'Emberheart', text: 'Every flare also feeds the lantern 20 light and mends a heart.', icon: 'emberheart', max: 1, rare: true, apply: (m) => { m.emberheart = 1; } },
 ];
+
+/** How much likelier a common boon is to be drawn than a rare one. */
+const RARE_WEIGHT = 0.4;
 
 /** The boon with this id. */
 export function boonById(id) {
   return BOONS.find((boon) => boon.id === id) ?? null;
 }
 
-/** Three different boons the run can still take (fewer only if fewer are left), drawn from `random`. */
+/** Three different boons the run can still take (fewer only if fewer are left), drawn from `random`; rare ones come up less often. */
 export function drawBoons(taken, random, count = 3) {
   const open = BOONS.filter((boon) => taken.filter((id) => id === boon.id).length < boon.max);
   const offer = [];
-  while (offer.length < count && open.length > 0) offer.push(open.splice(random.int(open.length), 1)[0]);
+  while (offer.length < count && open.length > 0) {
+    let total = 0;
+    for (const boon of open) total += boon.rare ? RARE_WEIGHT : 1;
+    let roll = random.next() * total;
+    let index = open.length - 1;
+    for (let at = 0; at < open.length; at += 1) {
+      roll -= open[at].rare ? RARE_WEIGHT : 1;
+      if (roll <= 0) {
+        index = at;
+        break;
+      }
+    }
+    offer.push(open.splice(index, 1)[0]);
+  }
   return offer;
 }
 

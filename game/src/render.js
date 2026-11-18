@@ -5,6 +5,7 @@ import { LANTERN, PLAYER, VIEW } from './config.js';
 import { BRUTE, DARTER, GLOAM, SHADE, SPITTER } from './enemies.js';
 import { glowRadius } from './world.js';
 import { drawHud, drawScreen } from './hud.js';
+import { paletteFor } from './palettes.js';
 
 export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
@@ -55,17 +56,17 @@ export function createRenderer(canvas) {
     return { x: ((clientX - rect.left) * ratio - offsetX) / scale, y: ((clientY - rect.top) * ratio - offsetY) / scale };
   }
 
-  function drawSea(time) {
+  function drawSea(time, palette) {
     const sky = ctx.createLinearGradient(0, 0, 0, VIEW.height);
-    sky.addColorStop(0, '#060a18');
-    sky.addColorStop(0.55, '#0a1630');
-    sky.addColorStop(1, '#0d1d3a');
+    sky.addColorStop(0, palette.top);
+    sky.addColorStop(0.55, palette.mid);
+    sky.addColorStop(1, palette.bottom);
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, VIEW.width, VIEW.height);
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.6;
     for (let row = 0; row < 26; row += 1) {
       const y = 40 + row * 27;
-      ctx.strokeStyle = `rgba(90, 140, 200, ${0.05 + 0.05 * Math.sin(row * 1.7)})`;
+      ctx.strokeStyle = `rgba(${palette.wave}, ${0.08 + 0.06 * Math.sin(row * 1.7)})`;
       ctx.beginPath();
       for (let x = -20; x <= VIEW.width + 20; x += 20) {
         const wave = Math.sin(x * 0.012 + time * 0.9 + row * 0.8) * 5 + Math.sin(x * 0.031 - time * 1.3 + row) * 2;
@@ -82,26 +83,29 @@ export function createRenderer(canvas) {
   }
 
   /** A thin moon low over the sea, with its broken path of light on the water; it glows through the dark. */
-  function drawMoon(time) {
+  function drawMoon(time, palette) {
     const x = 1150;
     const y = 214;
-    const halo = ctx.createRadialGradient(x, y, 20, x, y, 130);
-    halo.addColorStop(0, 'rgba(190, 210, 255, 0.28)');
-    halo.addColorStop(1, 'rgba(190, 210, 255, 0)');
+    const blood = palette.name === 'Blood Moon';
+    const halo = ctx.createRadialGradient(x, y, 20, x, y, blood ? 170 : 130);
+    halo.addColorStop(0, `rgba(${palette.halo}, ${blood ? 0.4 : 0.3})`);
+    halo.addColorStop(1, `rgba(${palette.halo}, 0)`);
     ctx.fillStyle = halo;
-    ctx.fillRect(x - 130, y - 130, 260, 260);
-    ctx.fillStyle = '#dfe6ff';
+    ctx.fillRect(x - 170, y - 170, 340, 340);
+    ctx.fillStyle = palette.moon;
     ctx.beginPath();
-    ctx.arc(x, y, 30, 0, Math.PI * 2);
+    ctx.arc(x, y, blood ? 34 : 30, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = 'rgba(40, 50, 90, 0.9)';
-    ctx.beginPath();
-    ctx.arc(x + 13, y - 7, 27, 0, Math.PI * 2);
-    ctx.fill();
+    if (!blood) {
+      ctx.fillStyle = palette.mid;
+      ctx.beginPath();
+      ctx.arc(x + 13, y - 7, 27, 0, Math.PI * 2);
+      ctx.fill();
+    }
     for (let row = 0; row < 15; row += 1) {
       const wy = y + 70 + row * 24;
       const width = 10 + row * 4 + Math.sin(time * 1.7 + row) * 6;
-      ctx.fillStyle = `rgba(200, 215, 255, ${0.16 - row * 0.008})`;
+      ctx.fillStyle = `rgba(${palette.halo}, ${0.18 - row * 0.009})`;
       ctx.fillRect(x - width / 2 + Math.sin(time + row * 1.3) * 6, wy, width, 2.4);
     }
   }
@@ -342,12 +346,12 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  function drawLights(state, time) {
+  function drawLights(state, time, palette) {
     dctx.setTransform(1, 0, 0, 1, 0, 0);
     dctx.globalCompositeOperation = 'source-over';
     dctx.clearRect(0, 0, dark.width, dark.height);
     dctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
-    dctx.fillStyle = 'rgba(3, 4, 16, 0.78)';
+    dctx.fillStyle = `rgba(${palette.dark}, 0.7)`;
     dctx.fillRect(-10, -10, VIEW.width + 20, VIEW.height + 20);
     dctx.globalCompositeOperation = 'destination-out';
     const hole = (x, y, radius, strength = 1) => {
@@ -375,9 +379,9 @@ export function createRenderer(canvas) {
     ctx.drawImage(dark, 0, 0);
   }
 
-  function drawGlowing(state, time, showTexts) {
+  function drawGlowing(state, time, showTexts, palette) {
     const fx = state.fx;
-    drawMoon(time);
+    drawMoon(time, palette);
     for (const enemy of state.enemies) drawEyes(enemy);
     ctx.globalCompositeOperation = 'lighter';
     for (const glob of state.globs) {
@@ -421,8 +425,9 @@ export function createRenderer(canvas) {
       ctx.stroke();
     }
     for (const ring of state.rings) {
-      ctx.strokeStyle = `rgba(255, 220, 150, ${Math.max(0, 1 - ring.radius / 340)})`;
-      ctx.lineWidth = 10;
+      const fade = Math.max(0, 1 - ring.radius / (ring.max + 20));
+      ctx.strokeStyle = ring.choir ? `rgba(150, 230, 255, ${fade})` : `rgba(255, 220, 150, ${fade})`;
+      ctx.lineWidth = ring.choir ? 6 : 10;
       ctx.beginPath();
       ctx.arc(ring.x, ring.y, ring.radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -479,13 +484,14 @@ export function createRenderer(canvas) {
     const sx = Math.sin(time * 91) * shake * 0.5;
     const sy = Math.cos(time * 77) * shake * 0.5;
     ctx.setTransform(scale, 0, 0, scale, offsetX + sx * scale, offsetY + sy * scale);
-    drawSea(time);
+    const palette = paletteFor(state.night);
+    drawSea(time, palette);
     drawIsland(state, time);
     for (const enemy of state.enemies) drawEnemy(enemy);
     drawWick(state, time);
-    drawLights(state, time);
+    drawLights(state, time, palette);
     ctx.setTransform(scale, 0, 0, scale, offsetX + sx * scale, offsetY + sy * scale);
-    drawGlowing({ ...state, fx: world.fx }, time, ui.screen !== SCREEN_TITLE);
+    drawGlowing({ ...state, fx: world.fx }, time, ui.screen !== SCREEN_TITLE, palette);
     ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
     if (state.lantern.hurt > 0 || state.player.hurt > 0) {
       const edge = ctx.createRadialGradient(VIEW.width / 2, VIEW.height / 2, VIEW.height * 0.4, VIEW.width / 2, VIEW.height / 2, VIEW.width * 0.7);

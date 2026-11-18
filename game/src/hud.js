@@ -70,6 +70,40 @@ function formatScore(value) {
   return Math.round(value).toLocaleString('en-US');
 }
 
+/**
+ * The watch log: one medallion a night, left to right. A kept night is a flame as bright as the light
+ * the lantern still held at its dawn-break, a lost night a red cross, a night to come an empty ring;
+ * `next` rings the night about to begin.
+ */
+function drawWatchLog(ctx, state, centerX, y, spacing, size, next = 0) {
+  const left = centerX - ((NIGHTS - 1) * spacing) / 2;
+  for (let night = 1; night <= NIGHTS; night += 1) {
+    const x = left + (night - 1) * spacing;
+    const entry = state.log.find((item) => item.night === night);
+    ctx.beginPath();
+    ctx.arc(x, y, size * 0.62, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(12, 12, 28, 0.85)';
+    ctx.fill();
+    ctx.lineWidth = night === next ? 2.5 : 1.5;
+    ctx.strokeStyle = night === next ? GOLD : entry ? 'rgba(255, 207, 122, 0.55)' : 'rgba(255, 255, 255, 0.18)';
+    ctx.stroke();
+    if (entry && entry.kept) {
+      drawIcon(ctx, 'flame', x, y, size * 0.7, `rgba(255, ${150 + Math.round(entry.light * 80)}, ${70 + Math.round(entry.light * 60)}, ${0.45 + entry.light * 0.55})`);
+    } else if (entry) {
+      ctx.strokeStyle = '#ff6a6a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(x - size * 0.25, y - size * 0.25);
+      ctx.lineTo(x + size * 0.25, y + size * 0.25);
+      ctx.moveTo(x + size * 0.25, y - size * 0.25);
+      ctx.lineTo(x - size * 0.25, y + size * 0.25);
+      ctx.stroke();
+    } else {
+      text(ctx, `${night}`, x, y + size * 0.18, Math.round(size * 0.42), night === next ? GOLD : 'rgba(255, 255, 255, 0.35)', 'center');
+    }
+  }
+}
+
 /** The in-play HUD: lantern light, the Wick's hearts, the night, score and combo, flare and boons. */
 export function drawHud(ctx, state, ui) {
   const top = ctx.createLinearGradient(0, 0, 0, 92);
@@ -91,6 +125,7 @@ export function drawHud(ctx, state, ui) {
   const left = Math.max(0, state.nightTotal - state.nightBanished);
   bar(ctx, VIEW.width / 2 - 130, 42, 260, 8, state.nightTotal ? state.nightBanished / state.nightTotal : 0, '#6a5acd', '#c9a6ff');
   text(ctx, `${left} shade${left === 1 ? '' : 's'} left tonight`, VIEW.width / 2, 68, 13, DIM, 'center');
+  if (state.omen !== null) text(ctx, `◆ ${state.omen.name}`, VIEW.width / 2, 90, 15, `hsl(${state.omen.hue}, 90%, 72%)`, 'center');
   text(ctx, formatScore(state.score), VIEW.width - 28, 38, 30, PALE, 'right');
   text(ctx, `BEST ${formatScore(Math.max(ui.best, state.score))}`, VIEW.width - 28, 58, 12, DIM, 'right');
   if (state.combo > 1) {
@@ -163,7 +198,13 @@ function drawLogo(ctx, y, size) {
 }
 
 function drawTitle(ctx, state, ui) {
-  veil(ctx, 0.3);
+  const shade = ctx.createLinearGradient(0, 0, 0, VIEW.height);
+  shade.addColorStop(0, 'rgba(3, 4, 14, 0.62)');
+  shade.addColorStop(0.32, 'rgba(3, 4, 14, 0.05)');
+  shade.addColorStop(0.62, 'rgba(3, 4, 14, 0.05)');
+  shade.addColorStop(1, 'rgba(3, 4, 14, 0.7)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, VIEW.width, VIEW.height);
   drawLogo(ctx, 150, 104);
   text(ctx, 'Keep the last lantern lit through ten nights of the Murk.', VIEW.width / 2, 194, 22, PALE, 'center', SERIF, 'italic');
   panel(ctx, 240, 478, 800, 168, 18, 'rgba(8, 10, 24, 0.8)', 'rgba(255, 207, 122, 0.4)');
@@ -194,38 +235,51 @@ function drawTitle(ctx, state, ui) {
 }
 
 function drawBoonChoice(ctx, state, ui) {
-  veil(ctx, 0.62);
-  text(ctx, `NIGHT ${state.night} SURVIVED`, VIEW.width / 2, 128, 52, GOLD, 'center', SERIF);
-  text(ctx, `+${formatScore(state.clearBonus ?? 0)} dawn-break bonus  ·  score ${formatScore(state.score)}  ·  lantern ${Math.ceil(state.lantern.light)}`, VIEW.width / 2, 168, 18, PALE, 'center', SANS, 'normal');
+  veil(ctx, 0.55);
+  drawWatchLog(ctx, state, VIEW.width / 2, 42, 46, 30, state.night + 1);
+  text(ctx, `NIGHT ${state.night} SURVIVED`, VIEW.width / 2, 132, 52, GOLD, 'center', SERIF);
+  text(ctx, `+${formatScore(state.clearBonus ?? 0)} dawn-break bonus  ·  score ${formatScore(state.score)}  ·  lantern ${Math.ceil(state.lantern.light)}`, VIEW.width / 2, 170, 18, PALE, 'center', SANS, 'normal');
   text(ctx, 'Choose a boon for the night ahead', VIEW.width / 2, 228, 24, PALE, 'center', SERIF, 'italic');
   const rects = boonCardRects(state.offer.length);
   state.offer.forEach((boon, index) => {
     const rect = rects[index];
     const hover = ui.hover === index;
     const owned = state.boons.filter((id) => id === boon.id).length;
+    const accent = boon.rare ? '#c9a6ff' : GOLD;
+    const glow = boon.rare ? '190, 150, 255' : '255, 190, 90';
     ctx.save();
-    if (hover) {
-      ctx.shadowColor = 'rgba(255, 190, 90, 0.8)';
-      ctx.shadowBlur = 26;
+    if (hover || boon.rare) {
+      ctx.shadowColor = `rgba(${glow}, ${hover ? 0.85 : 0.5})`;
+      ctx.shadowBlur = hover ? 28 : 16;
     }
-    panel(ctx, rect.x, rect.y - (hover ? 8 : 0), rect.width, rect.height, 20, hover ? 'rgba(40, 30, 50, 0.95)' : 'rgba(18, 16, 34, 0.92)', hover ? GOLD : 'rgba(255, 207, 122, 0.45)');
+    panel(ctx, rect.x, rect.y - (hover ? 8 : 0), rect.width, rect.height, 20, hover ? 'rgba(40, 30, 54, 0.95)' : boon.rare ? 'rgba(30, 20, 48, 0.94)' : 'rgba(18, 16, 34, 0.92)', hover ? accent : `rgba(${glow}, 0.55)`);
     ctx.restore();
     const y = rect.y - (hover ? 8 : 0);
     const halo = ctx.createRadialGradient(rect.x + rect.width / 2, y + 74, 4, rect.x + rect.width / 2, y + 74, 56);
-    halo.addColorStop(0, 'rgba(255, 190, 90, 0.35)');
-    halo.addColorStop(1, 'rgba(255, 190, 90, 0)');
+    halo.addColorStop(0, `rgba(${glow}, 0.4)`);
+    halo.addColorStop(1, `rgba(${glow}, 0)`);
     ctx.fillStyle = halo;
     ctx.fillRect(rect.x, y + 14, rect.width, 120);
-    drawIcon(ctx, boon.icon, rect.x + rect.width / 2, y + 74, 56, GOLD);
+    drawIcon(ctx, boon.icon, rect.x + rect.width / 2, y + 74, 56, accent);
+    if (boon.rare) text(ctx, 'RARE', rect.x + rect.width - 20, y + 30, 13, accent, 'right');
     text(ctx, boon.name, rect.x + rect.width / 2, y + 150, 26, PALE, 'center', SERIF);
     ctx.font = `normal 17px ${SANS}`;
     ctx.fillStyle = DIM;
     ctx.textAlign = 'center';
     wrap(ctx, boon.text, rect.x + rect.width / 2, y + 184, rect.width - 44, 22);
     text(ctx, owned > 0 ? `owned ×${owned}` : 'new', rect.x + 20, y + rect.height - 18, 13, owned > 0 ? '#b9a6ff' : '#8fe0a0');
-    text(ctx, `press ${index + 1}`, rect.x + rect.width - 20, y + rect.height - 18, 13, GOLD, 'right');
+    text(ctx, `press ${index + 1}`, rect.x + rect.width - 20, y + rect.height - 18, 13, accent, 'right');
   });
-  text(ctx, 'Click a card or press 1 · 2 · 3', VIEW.width / 2, 600, 16, DIM, 'center');
+  const omen = state.nextOmen;
+  const omenColor = omen ? `hsl(${omen.hue}, 90%, 72%)` : '#ff8aa0';
+  panel(ctx, 240, 566, 800, 74, 16, 'rgba(10, 10, 26, 0.85)', omen ? `hsla(${omen.hue}, 80%, 65%, 0.6)` : 'rgba(255, 110, 130, 0.6)');
+  text(ctx, omen ? 'TOMORROW\'S OMEN' : 'TOMORROW', 270, 594, 13, DIM);
+  text(ctx, omen ? omen.name : state.night + 1 === NIGHTS ? 'The Gloam, Unbound' : 'The Gloam rises', 270, 622, 22, omenColor, 'left', SERIF);
+  ctx.font = `normal 16px ${SANS}`;
+  ctx.fillStyle = PALE;
+  ctx.textAlign = 'left';
+  wrap(ctx, omen ? omen.text : 'A blood moon and no omen: only the Gloam and its brood.', 520, 598, 500, 21);
+  text(ctx, 'Click a card or press 1 · 2 · 3', VIEW.width / 2, 676, 16, DIM, 'center');
 }
 
 function drawPause(ctx) {
@@ -251,13 +305,13 @@ function drawResults(ctx, state, ui) {
     : state.over === END_LANTERN
       ? `The dark took the sea on night ${state.night}. Guard the light closer next time.`
       : `The Wick guttered on night ${state.night}. Dash through danger, not into it.`;
-  text(ctx, title, VIEW.width / 2, 150, 60, dawn ? '#ffe2a0' : '#ff9a8a', 'center', SERIF);
-  text(ctx, line, VIEW.width / 2, 192, 19, PALE, 'center', SERIF, 'italic');
-  panel(ctx, 340, 228, 600, 330, 22, 'rgba(10, 10, 26, 0.88)', 'rgba(255, 207, 122, 0.45)');
-  text(ctx, 'SCORE', VIEW.width / 2, 272, 16, DIM, 'center');
-  text(ctx, formatScore(state.score), VIEW.width / 2, 328, 58, GOLD, 'center', SERIF);
-  if (ui.newBest) text(ctx, '★ NEW BEST ★', VIEW.width / 2, 356, 16, '#8fe0a0', 'center');
-  else text(ctx, `best ${formatScore(ui.best)}`, VIEW.width / 2, 356, 14, DIM, 'center');
+  text(ctx, title, VIEW.width / 2, 120, 60, dawn ? '#ffe2a0' : '#ff9a8a', 'center', SERIF);
+  text(ctx, line, VIEW.width / 2, 160, 19, PALE, 'center', SERIF, 'italic');
+  panel(ctx, 320, 188, 640, 420, 22, 'rgba(10, 10, 26, 0.88)', 'rgba(255, 207, 122, 0.45)');
+  text(ctx, 'SCORE', VIEW.width / 2, 226, 16, DIM, 'center');
+  text(ctx, formatScore(state.score), VIEW.width / 2, 282, 58, GOLD, 'center', SERIF);
+  if (ui.newBest) text(ctx, '★ NEW BEST ★', VIEW.width / 2, 310, 16, '#8fe0a0', 'center');
+  else text(ctx, `best ${formatScore(ui.best)}`, VIEW.width / 2, 310, 14, DIM, 'center');
   const rows = [
     ['Nights survived', `${dawn ? NIGHTS : state.night - 1} / ${NIGHTS}`],
     ['Shades banished', `${state.kills}`],
@@ -267,21 +321,25 @@ function drawResults(ctx, state, ui) {
   rows.forEach(([label, value], index) => {
     const column = index % 2;
     const row = Math.floor(index / 2);
-    const x = 390 + column * 280;
-    const y = 404 + row * 44;
+    const x = 370 + column * 300;
+    const y = 352 + row * 40;
     text(ctx, label, x, y, 15, DIM, 'left', SANS, 'normal');
-    text(ctx, value, x + 230, y, 20, PALE, 'right');
+    text(ctx, value, x + 240, y, 20, PALE, 'right');
   });
-  text(ctx, 'Boons', 390, 512, 15, DIM, 'left', SANS, 'normal');
+  text(ctx, 'Boons', 370, 444, 15, DIM, 'left', SANS, 'normal');
   state.boons.forEach((id, index) => {
-    drawIcon(ctx, boonById(id).icon, 470 + index * 34, 506, 22, GOLD);
+    const boon = boonById(id);
+    drawIcon(ctx, boon.icon, 450 + index * 36, 438, 22, boon.rare ? '#c9a6ff' : GOLD);
   });
-  if (state.boons.length === 0) text(ctx, 'none yet', 470, 512, 15, DIM, 'left', SANS, 'normal');
+  if (state.boons.length === 0) text(ctx, 'none yet', 450, 444, 15, DIM, 'left', SANS, 'normal');
+  text(ctx, 'THE WATCH', VIEW.width / 2, 492, 13, DIM, 'center');
+  drawWatchLog(ctx, state, VIEW.width / 2, 532, 56, 38);
+  text(ctx, 'each flame burns as bright as the light the lantern kept at that dawn-break', VIEW.width / 2, 584, 13, DIM, 'center', SANS, 'normal');
   const pulse = 0.55 + 0.45 * Math.sin(ui.clock * 3.2);
   ctx.globalAlpha = pulse;
-  text(ctx, 'Click or press Enter to light it again', VIEW.width / 2, 618, 26, GOLD, 'center', SERIF);
+  text(ctx, 'Click or press Enter to light it again', VIEW.width / 2, 652, 26, GOLD, 'center', SERIF);
   ctx.globalAlpha = 1;
-  text(ctx, 'Esc for the title', VIEW.width / 2, 650, 14, DIM, 'center');
+  text(ctx, 'Esc for the title', VIEW.width / 2, 682, 14, DIM, 'center');
 }
 
 /** Whatever screen is up over the playfield (none during play). */

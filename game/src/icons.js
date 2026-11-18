@@ -119,6 +119,41 @@ export function drawIcon(ctx, name, x, y, size, color) {
     }
     ctx.closePath();
     ctx.fill();
+  } else if (name === 'phoenix') {
+    ctx.moveTo(0, s);
+    ctx.quadraticCurveTo(-s * 0.2, 0, -s, -s * 0.6);
+    ctx.quadraticCurveTo(-s * 0.3, -s * 0.3, -s * 0.1, -s * 0.9);
+    ctx.quadraticCurveTo(0, -s * 0.2, s * 0.1, -s * 0.9);
+    ctx.quadraticCurveTo(s * 0.3, -s * 0.3, s, -s * 0.6);
+    ctx.quadraticCurveTo(s * 0.2, 0, 0, s);
+    ctx.fill();
+  } else if (name === 'choir') {
+    ctx.arc(0, s * 0.2, s * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    for (const reach of [0.5, 0.8]) {
+      ctx.beginPath();
+      ctx.arc(0, s * 0.2, s * reach, -Math.PI * 0.95, -Math.PI * 0.05);
+      ctx.stroke();
+    }
+  } else if (name === 'mirror') {
+    ctx.moveTo(-s, s * 0.6);
+    ctx.lineTo(0, -s * 0.5);
+    ctx.lineTo(s, s * 0.6);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-s, -s * 0.85);
+    ctx.lineTo(s, -s * 0.85);
+    ctx.stroke();
+  } else if (name === 'emberheart') {
+    ctx.moveTo(0, s * 0.85);
+    ctx.bezierCurveTo(-s * 1.3, -s * 0.1, -s * 0.6, -s * 1.1, 0, -s * 0.35);
+    ctx.bezierCurveTo(s * 0.6, -s * 1.1, s * 1.3, -s * 0.1, 0, s * 0.85);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.2);
+    ctx.bezierCurveTo(s * 0.35, s * 0.05, s * 0.3, s * 0.45, 0, s * 0.45);
+    ctx.bezierCurveTo(-s * 0.3, s * 0.45, -s * 0.35, s * 0.05, 0, -s * 0.2);
+    ctx.fill();
   } else {
     ctx.arc(0, 0, s * 0.6, 0, Math.PI * 2);
     ctx.fill();

@@ -2,6 +2,7 @@
 // front from the seed, in swells (a pack from one side, then a breath), so it can be replayed exactly.
 import { BOSS_NIGHTS, VIEW } from './config.js';
 import { BRUTE, DARTER, GLOAM, SHADE, SPITTER } from './enemies.js';
+import { omenEffects } from './omens.js';
 
 /** A point just outside the view, on a random edge (the long edges more often). */
 export function shorePoint(random, side = random.int(4)) {
@@ -12,11 +13,11 @@ export function shorePoint(random, side = random.int(4)) {
   return { x: -margin, y: random.range(0, VIEW.height), side };
 }
 
-/** Which kinds may rise on `night`, with how often each is drawn. */
-export function nightMix(night) {
+/** Which kinds may rise on `night`, with how often each is drawn (an omen can call more Inkwisps). */
+export function nightMix(night, spitters = 1) {
   const mix = [{ kind: SHADE, weight: 1 }];
   if (night >= 2) mix.push({ kind: DARTER, weight: 0.32 + night * 0.03 });
-  if (night >= 3) mix.push({ kind: SPITTER, weight: 0.22 + night * 0.01 });
+  if (night >= 3 || spitters > 1) mix.push({ kind: SPITTER, weight: (0.22 + night * 0.01) * spitters });
   if (night >= 4) mix.push({ kind: BRUTE, weight: 0.1 + night * 0.012 });
   return mix;
 }
@@ -32,11 +33,12 @@ function drawKind(mix, random) {
   return mix[0].kind;
 }
 
-/** The plan for `night`: a queue of { at, kind, x, y } sorted by time, its size and whether a Gloam rises. */
-export function planNight(night, random) {
+/** The plan for `night` under `omen`: a queue of { at, kind, x, y } sorted by time, its size and whether a Gloam rises. */
+export function planNight(night, random, omen = null) {
+  const effects = omenEffects(omen);
   const boss = BOSS_NIGHTS.includes(night);
-  const count = Math.round((10 + night * 6) * (boss ? 0.65 : 1));
-  const mix = nightMix(night);
+  const count = Math.round((10 + night * 6) * (boss ? 0.65 : 1) * effects.count);
+  const mix = nightMix(night, effects.spitters);
   const queue = [];
   const length = 20 + night * 2.6;
   let at = 1.2;

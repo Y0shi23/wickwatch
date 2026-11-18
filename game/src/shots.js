@@ -26,7 +26,7 @@ function playUntil(world, seconds, skill, stop) {
 export function stageShot(name, world) {
   world.reset();
   if (name === 'play') {
-    const controls = playUntil(world, 900, 1, (state) => state.night === 10 && state.nightTime > 13 && state.enemies.length >= 14);
+    const controls = playUntil(world, 900, 1, (state) => state.night === 10 && state.nightTime >= 13);
     return { screen: SCREEN_PLAY, best: 18250, newBest: false, hover: -1, mouse: { x: controls.aimX, y: controls.aimY }, clock: world.state.time };
   }
   if (name === 'boon') {
@@ -38,6 +38,6 @@ export function stageShot(name, world) {
     const state = world.state;
     return { screen: SCREEN_OVER, best: Math.max(18250, state.score), newBest: state.score > 18250, hover: -1, mouse: null, clock: 0.9 };
   }
-  playUntil(world, 15, 1, () => false);
+  playUntil(world, 900, 1, (state) => state.night === 7 && state.nightTime >= 22);
   return { screen: SCREEN_TITLE, best: 18250, newBest: false, hover: -1, mouse: null, clock: 0.5 };
 }

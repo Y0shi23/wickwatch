@@ -5,6 +5,7 @@ import { COMBO, EMBER, FLARE, LANTERN, MAX_ENEMIES, NIGHTS, PLAYER, SPARK, VIEW 
 import { BRUTE, ENEMY_KINDS, GLOAM, SHADE, makeEnemy, updateEnemy } from './enemies.js';
 import { planNight } from './waves.js';
 import { baseMods, drawBoons, takeBoon } from './boons.js';
+import { drawOmen, omenEffects } from './omens.js';
 import { createEffects } from './particles.js';
 
 export const EV_SHOOT = 1;
@@ -32,10 +33,10 @@ export function comboMultiplier(combo) {
   return 1 + Math.min(COMBO.max - 1, Math.floor(combo / COMBO.per) * COMBO.step);
 }
 
-/** The radius the lantern's glow reaches with its current light. */
+/** The radius the lantern's glow reaches with its current light (a Fogbank omen shortens it). */
 export function glowRadius(lantern) {
   const share = Math.max(0, Math.min(1, lantern.light / LANTERN.maxLight));
-  return LANTERN.glowMin + (LANTERN.glowMax - LANTERN.glowMin) * share;
+  return (LANTERN.glowMin + (LANTERN.glowMax - LANTERN.glowMin) * share) * (lantern.glowScale ?? 1);
 }
 
 function freshState() {
@@ -62,6 +63,11 @@ function freshState() {
     offer: [],
     boons: [],
     mods: baseMods(),
+    omen: null,
+    nextOmen: null,
+    effects: omenEffects(null),
+    log: [],
+    phoenixUsed: false,
     player: {
       x: LANTERN.x,
       y: LANTERN.y + 90,
@@ -79,7 +85,7 @@ function freshState() {
       aim: -Math.PI / 2,
       hurt: 0,
     },
-    lantern: { x: LANTERN.x, y: LANTERN.y, light: LANTERN.maxLight, maxLight: LANTERN.maxLight, hurt: 0, beaconCooldown: 1 },
+    lantern: { x: LANTERN.x, y: LANTERN.y, light: LANTERN.maxLight, maxLight: LANTERN.maxLight, hurt: 0, beaconCooldown: 1, choirCooldown: 4, glowScale: 1 },
     enemies: [],
     sparks: [],
     globs: [],
@@ -100,6 +106,11 @@ export function createWorld(random, fxRandom) {
   function spawn(kind, x, y) {
     const enemy = makeEnemy(kind, x, y, state.night, random);
     enemy.id = state.nextId++;
+    enemy.speed *= state.effects.speed;
+    if (state.effects.frail && kind === SHADE) {
+      enemy.hp = Math.max(1, enemy.hp - 1);
+      enemy.maxHp = enemy.hp;
+    }
     state.enemies.push(enemy);
     if (kind === GLOAM) {
       state.boss = enemy;
@@ -113,12 +124,20 @@ export function createWorld(random, fxRandom) {
     state.night = night;
     state.phase = 'fight';
     state.nightTime = 0;
-    const plan = planNight(night, random);
+    state.omen = state.nextOmen;
+    state.nextOmen = null;
+    state.effects = omenEffects(state.omen);
+    state.lantern.glowScale = state.effects.glow;
+    state.phoenixUsed = false;
+    const plan = planNight(night, random, state.omen);
     state.queue = plan.queue;
     state.nightTotal = plan.total;
     state.nightBanished = 0;
     state.offer = [];
-    state.banner = { text: `NIGHT ${night}`, sub: night === NIGHTS ? 'The last night. Hold until dawn.' : 'The Murk rises from the sea.', time: 2.6 };
+    const sub = state.omen !== null
+      ? `Omen: ${state.omen.name}. ${state.omen.text}`
+      : night === NIGHTS ? 'The last night. Hold until dawn.' : 'The Murk rises from the sea.';
+    state.banner = { text: `NIGHT ${night}`, sub, time: 2.6 };
   }
 
   function reset() {
@@ -147,6 +166,14 @@ export function createWorld(random, fxRandom) {
     state.combo = 0;
     events |= EV_PLAYER_HURT;
     fx.burst(player.x, player.y, 10, 16, 220, 3);
+    if (player.hp <= 0 && state.mods.phoenix > 0 && !state.phoenixUsed) {
+      state.phoenixUsed = true;
+      player.hp = Math.min(2, player.maxHp);
+      player.invulnerable = 2.2;
+      state.flash = Math.max(state.flash, 0.4);
+      fx.burst(player.x, player.y, 25, 60, 360, 4, 1);
+      fx.float(player.x, player.y - 30, 'REKINDLED', 30);
+    }
   }
 
   function dropEmbers(x, y, count) {
@@ -185,9 +212,10 @@ export function createWorld(random, fxRandom) {
     state.combo += 1;
     state.comboTimer = COMBO.window;
     state.bestCombo = Math.max(state.bestCombo, state.combo);
-    const points = Math.round(spec.score * comboMultiplier(state.combo));
+    const points = Math.round(spec.score * comboMultiplier(state.combo) * state.effects.score);
     state.score += points;
     state.kills += 1;
+    if (state.effects.feed > 0) state.lantern.light = Math.min(state.lantern.maxLight, state.lantern.light + state.effects.feed);
     state.nightBanished += 1;
     events |= EV_KILL;
     fx.burst(enemy.x, enemy.y, spec.hue, enemy.kind === GLOAM ? 120 : 14 + enemy.radius, enemy.kind === GLOAM ? 420 : 200, enemy.kind === GLOAM ? 5 : 3);
@@ -216,7 +244,8 @@ export function createWorld(random, fxRandom) {
 
   function shoot(x, y, angle, damage, pierce, beacon = false) {
     const speed = SPARK.speed * state.mods.sparkSpeed;
-    state.sparks.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: SPARK.life, damage, pierce, hits: [], beacon });
+    const bounces = beacon ? 0 : state.mods.mirror;
+    state.sparks.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: SPARK.life + bounces * 0.6, damage, pierce, hits: [], beacon, bounces });
   }
 
   function updatePlayer(dt, controls) {
@@ -284,7 +313,12 @@ export function createWorld(random, fxRandom) {
     }
     if (controls.flare && state.flare >= FLARE.cost * mods.flareCost) {
       state.flare = 0;
-      state.rings.push({ x: player.x, y: player.y, radius: 0, hits: [] });
+      state.rings.push({ x: player.x, y: player.y, radius: 0, hits: [], max: FLARE.radius, damage: FLARE.damage * mods.flareDamage });
+      if (mods.emberheart > 0) {
+        state.lantern.light = Math.min(state.lantern.maxLight, state.lantern.light + 20);
+        player.hp = Math.min(player.maxHp, player.hp + 1);
+        fx.float(player.x, player.y - 34, '+20 light  +1 heart', 30);
+      }
       state.shake = Math.max(state.shake, 12);
       state.flash = Math.max(state.flash, 0.35);
       events |= EV_FLARE;
@@ -305,6 +339,14 @@ export function createWorld(random, fxRandom) {
         } else {
           lantern.beaconCooldown = 0.2;
         }
+      }
+    }
+    if (mods.choir > 0) {
+      lantern.choirCooldown -= dt;
+      if (lantern.choirCooldown <= 0) {
+        lantern.choirCooldown = 7 / mods.choir;
+        state.rings.push({ x: lantern.x, y: lantern.y, radius: 0, hits: [], max: 210, damage: 3 * mods.damage, choir: true });
+        fx.burst(lantern.x, lantern.y - 12, 50, 18, 200, 2.5, 0.6);
       }
     }
     state.orbitAngle += dt * 3.4;
@@ -329,12 +371,27 @@ export function createWorld(random, fxRandom) {
       spark.life -= dt;
       spark.x += spark.vx * dt;
       spark.y += spark.vy * dt;
+      const outX = spark.x < 0 || spark.x > VIEW.width;
+      const outY = spark.y < 0 || spark.y > VIEW.height;
+      if ((outX || outY) && spark.bounces > 0) {
+        spark.bounces -= 1;
+        if (outX) spark.vx = -spark.vx;
+        if (outY) spark.vy = -spark.vy;
+        spark.x = Math.max(0, Math.min(VIEW.width, spark.x));
+        spark.y = Math.max(0, Math.min(VIEW.height, spark.y));
+        spark.hits.length = 0;
+        fx.burst(spark.x, spark.y, 200, 4, 90, 2, 0.3);
+      }
       let spent = spark.life <= 0 || spark.x < -20 || spark.x > VIEW.width + 20 || spark.y < -20 || spark.y > VIEW.height + 20;
       for (let g = state.globs.length - 1; g >= 0 && !spent; g -= 1) {
         const glob = state.globs[g];
         if (Math.hypot(glob.x - spark.x, glob.y - spark.y) < 9 + SPARK.radius) {
           state.globs.splice(g, 1);
           fx.burst(glob.x, glob.y, 150, 6, 120, 2, 0.4);
+          if (state.effects.globScore > 0) {
+            state.score += state.effects.globScore;
+            fx.float(glob.x, glob.y, `+${state.effects.globScore}`, 150);
+          }
           spent = spark.pierce <= 0;
           spark.pierce -= 1;
         }
@@ -439,8 +496,8 @@ export function createWorld(random, fxRandom) {
       if (distance < PLAYER.radius + 10) {
         state.embers.splice(index, 1);
         state.embersTaken += 1;
-        state.score += EMBER.score;
-        state.flare = Math.min(FLARE.cost * mods.flareCost, state.flare + EMBER.charge * mods.emberValue);
+        state.score += EMBER.score * state.effects.embers;
+        state.flare = Math.min(FLARE.cost * mods.flareCost, state.flare + EMBER.charge * mods.emberValue * state.effects.embers);
         if (mods.kindle > 0) state.lantern.light = Math.min(state.lantern.maxLight, state.lantern.light + mods.kindle);
         events |= EV_EMBER;
         continue;
@@ -452,18 +509,18 @@ export function createWorld(random, fxRandom) {
   function updateRings(dt) {
     for (let index = state.rings.length - 1; index >= 0; index -= 1) {
       const ring = state.rings[index];
-      ring.radius += FLARE.speed * dt;
+      ring.radius += FLARE.speed * dt * (ring.choir ? 0.6 : 1);
       for (const enemy of state.enemies) {
         if (!enemy.alive || ring.hits.includes(enemy.id)) continue;
         if (Math.hypot(enemy.x - ring.x, enemy.y - ring.y) < ring.radius + enemy.radius) {
           ring.hits.push(enemy.id);
-          damageEnemy(enemy, FLARE.damage * state.mods.flareDamage);
+          damageEnemy(enemy, ring.damage);
         }
       }
       for (let g = state.globs.length - 1; g >= 0; g -= 1) {
         if (Math.hypot(state.globs[g].x - ring.x, state.globs[g].y - ring.y) < ring.radius) state.globs.splice(g, 1);
       }
-      if (ring.radius >= FLARE.radius) state.rings.splice(index, 1);
+      if (ring.radius >= ring.max) state.rings.splice(index, 1);
     }
   }
 
@@ -473,6 +530,8 @@ export function createWorld(random, fxRandom) {
     state.score += bonus;
     state.globs.length = 0;
     state.sparks.length = 0;
+    state.log.push({ night: state.night, light: state.lantern.light / state.lantern.maxLight, omen: state.omen?.id ?? null, kept: true });
+    state.nextOmen = drawOmen(state.night + 1, random);
     if (state.night >= NIGHTS) {
       state.over = END_DAWN;
       events |= EV_DAWN | EV_OVER;
@@ -531,15 +590,18 @@ export function createWorld(random, fxRandom) {
     if (state.comboTimer <= 0) state.combo = 0;
     const lantern = state.lantern;
     const near = nearestEnemy(lantern.x, lantern.y, 190);
-    if (near === null) lantern.light = Math.min(lantern.maxLight, lantern.light + LANTERN.regen * dt);
+    if (near === null) lantern.light = Math.min(lantern.maxLight, lantern.light + LANTERN.regen * state.effects.regen * dt);
+    if (state.effects.drain > 0) lantern.light = Math.max(0, lantern.light - state.effects.drain * dt);
     if (lantern.light <= 0) {
       state.over = END_LANTERN;
       events |= EV_OVER;
       fx.texts.length = 0;
+      state.log.push({ night: state.night, light: 0, omen: state.omen?.id ?? null, kept: false });
     } else if (state.player.hp <= 0) {
       state.over = END_WICK;
       events |= EV_OVER;
       fx.texts.length = 0;
+      state.log.push({ night: state.night, light: lantern.light / lantern.maxLight, omen: state.omen?.id ?? null, kept: false });
     } else if (state.queue.length === 0 && state.enemies.length === 0) {
       endNight();
     }
