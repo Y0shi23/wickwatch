@@ -55,5 +55,15 @@ export const COMBO = { window: 2.4, per: 5, step: 0.5, max: 4 };
 /** The most shades a night can hold at once, so a late night stays readable. */
 export const MAX_ENEMIES = 70;
 
+/**
+ * The three watches the title offers: how hard the lantern is hit, how tough and quick the shades
+ * are, and what the score is multiplied by.
+ */
+export const DIFFICULTIES = [
+  { id: 'gentle', name: 'Gentle', text: 'the lantern takes 30% less', lanternDamage: 0.7, hp: 0.85, speed: 0.92, score: 0.8 },
+  { id: 'keeper', name: 'Keeper', text: 'the watch as it was meant', lanternDamage: 1, hp: 1, speed: 1, score: 1 },
+  { id: 'embermad', name: 'Ember-Mad', text: 'tougher, faster shades · score ×1.5', lanternDamage: 1.15, hp: 1.3, speed: 1.12, score: 1.5 },
+];
+
 /** The storage key of the best score. */
 export const BEST_KEY = 'wickwatch.best.v1';

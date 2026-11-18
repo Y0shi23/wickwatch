@@ -1,9 +1,12 @@
 // The HUD and the screens around play: the title, the boon choice at the end of each night, the
 // pause card and the results of a watch. All drawn on the playfield's 1280x720 coordinates.
-import { FLARE, NIGHTS, VIEW } from './config.js';
+import { DIFFICULTIES, FLARE, NIGHTS, VIEW } from './config.js';
 import { BOONS, boonById } from './boons.js';
 import { ENEMY_KINDS } from './enemies.js';
+import { OMENS } from './omens.js';
+import { PALETTES, paletteFor } from './palettes.js';
 import { comboMultiplier, END_DAWN, END_LANTERN } from './world.js';
+import { watchFeats, watchGrade } from './feats.js';
 import { drawIcon } from './icons.js';
 
 const SANS = '"Trebuchet MS", Verdana, sans-serif';
@@ -12,13 +15,21 @@ const GOLD = '#ffcf7a';
 const PALE = '#e8e2d4';
 const DIM = 'rgba(232, 226, 212, 0.62)';
 
-/** Where the boon cards sit on the choice screen, for drawing and for clicks. */
+/** Where the boon cards sit on the dawn-break screen, for drawing and for clicks. */
 export function boonCardRects(count) {
-  const width = 300;
-  const height = 270;
-  const gap = 36;
-  const left = (VIEW.width - (width * count + gap * (count - 1))) / 2;
-  return Array.from({ length: count }, (_, index) => ({ x: left + index * (width + gap), y: 268, width, height }));
+  const width = 236;
+  const gap = 16;
+  return Array.from({ length: count }, (_, index) => ({ x: 40 + index * (width + gap), y: 222, width, height: 280 }));
+}
+
+/** Where the three watch (difficulty) chips sit on the title, for drawing and for clicks. */
+export function difficultyChipRects() {
+  return DIFFICULTIES.map((_, index) => ({ x: 340 + index * 228, y: 572, width: 220, height: 40 }));
+}
+
+/** Where the two tide cards sit, beside the boons, for drawing and for clicks. */
+export function tideCardRects(count) {
+  return Array.from({ length: count }, (_, index) => ({ x: 812, y: 222 + index * 144, width: 428, height: 132 }));
 }
 
 function panel(ctx, x, y, width, height, radius, fill, stroke) {
@@ -253,7 +264,10 @@ function drawTitle(ctx, state, ui) {
   ctx.fillRect(0, 0, VIEW.width, VIEW.height);
   drawLogo(ctx, 150, 104);
   text(ctx, 'Keep the last lantern lit through ten nights of the Murk.', VIEW.width / 2, 194, 22, PALE, 'center', SERIF, 'italic');
-  panel(ctx, 240, 478, 800, 168, 18, 'rgba(8, 10, 24, 0.8)', 'rgba(255, 207, 122, 0.4)');
+  const kindCount = Object.keys(ENEMY_KINDS).length;
+  const counts = `${NIGHTS} NIGHTS  ·  ${kindCount} KINDS OF MURK  ·  2 GLOAMS  ·  ${BOONS.length} BOONS  ·  ${OMENS.length} TIDES  ·  ${PALETTES.length + 1} SEAS`;
+  text(ctx, counts, VIEW.width / 2, 232, 16, '#ffd98f', 'center');
+  panel(ctx, 240, 456, 800, 196, 18, 'rgba(8, 10, 24, 0.82)', 'rgba(255, 207, 122, 0.4)');
   const controls = [
     ['WASD / Arrows', 'move the Wick'],
     ['Mouse', 'aim'],
@@ -266,13 +280,22 @@ function drawTitle(ctx, state, ui) {
     const column = index % 2;
     const row = Math.floor(index / 2);
     const x = 276 + column * 380;
-    const y = 512 + row * 30;
-    text(ctx, key, x, y, 16, GOLD);
-    text(ctx, does, x + 156, y, 15, PALE, 'left', SANS, 'normal');
+    const y = 486 + row * 27;
+    text(ctx, key, x, y, 15, GOLD);
+    text(ctx, does, x + 156, y, 14, PALE, 'left', SANS, 'normal');
   });
-  text(ctx, 'Embers charge your flare  ·  a boon at every dawn-break  ·  two Gloams rise', VIEW.width / 2, 604, 14, DIM, 'center', SANS, 'normal');
+  text(ctx, 'WATCH', 276, 592, 13, DIM);
+  difficultyChipRects().forEach((rect, index) => {
+    const level = DIFFICULTIES[index];
+    const chosen = ui.difficulty === index;
+    panel(ctx, rect.x, rect.y, rect.width, rect.height, 9, chosen ? 'rgba(70, 48, 20, 0.95)' : 'rgba(20, 18, 34, 0.9)', chosen ? GOLD : 'rgba(255, 255, 255, 0.18)');
+    panel(ctx, rect.x + 8, rect.y + 9, 20, 20, 5, chosen ? GOLD : 'rgba(255, 230, 190, 0.6)');
+    text(ctx, `${index + 1}`, rect.x + 18, rect.y + 24, 12, '#1a1424', 'center');
+    text(ctx, level.name, rect.x + 36, rect.y + 18, 14, chosen ? GOLD : PALE);
+    text(ctx, level.text, rect.x + 36, rect.y + 33, 11, DIM, 'left', SANS, 'normal');
+  });
   const kinds = Object.values(ENEMY_KINDS).map((kind) => kind.name).join('  ·  ');
-  text(ctx, `The Murk: ${kinds}`, VIEW.width / 2, 628, 14, 'rgba(200, 170, 255, 0.9)', 'center');
+  text(ctx, `The Murk: ${kinds}`, VIEW.width / 2, 634, 14, 'rgba(200, 170, 255, 0.9)', 'center');
   const pulse = 0.55 + 0.45 * Math.sin(ui.clock * 3.2);
   ctx.globalAlpha = pulse;
   text(ctx, 'Click or press Enter to light the lantern', VIEW.width / 2, 684, 24, GOLD, 'center', SERIF);
@@ -280,12 +303,61 @@ function drawTitle(ctx, state, ui) {
   if (ui.best > 0) text(ctx, `Best watch: ${formatScore(ui.best)}`, VIEW.width / 2, 708, 14, DIM, 'center');
 }
 
+function riskDots(ctx, risk, x, y, color) {
+  for (let index = 0; index < 3; index += 1) {
+    ctx.beginPath();
+    ctx.arc(x + index * 14, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = index < risk ? color : 'rgba(255, 255, 255, 0.16)';
+    ctx.fill();
+  }
+}
+
+function drawTideChoice(ctx, state) {
+  text(ctx, '2 · CHOOSE TOMORROW\'S TIDE', 812, 206, 16, GOLD);
+  text(ctx, 'Q · W', 1240, 206, 13, DIM, 'right');
+  const rects = tideCardRects(state.omenOffer.length);
+  if (rects.length === 0) {
+    panel(ctx, 812, 222, 428, 276, 18, 'rgba(40, 8, 18, 0.9)', 'rgba(255, 110, 130, 0.7)');
+    text(ctx, 'NO TIDE TO CHOOSE', 1026, 290, 14, DIM, 'center');
+    text(ctx, state.night + 1 === NIGHTS ? 'The Gloam, Unbound' : 'The Gloam rises', 1026, 340, 32, '#ff8aa0', 'center', SERIF);
+    text(ctx, 'A blood moon, and only the Gloam and its brood.', 1026, 382, 16, PALE, 'center', SANS, 'normal');
+    text(ctx, 'Banish it to keep the night.', 1026, 408, 16, PALE, 'center', SANS, 'normal');
+    return;
+  }
+  state.omenOffer.forEach((omen, index) => {
+    const rect = rects[index];
+    const chosen = state.nextOmen === omen;
+    const color = `hsl(${omen.hue}, 90%, 70%)`;
+    ctx.save();
+    if (chosen) {
+      ctx.shadowColor = `hsla(${omen.hue}, 90%, 60%, 0.7)`;
+      ctx.shadowBlur = 22;
+    }
+    panel(ctx, rect.x, rect.y, rect.width, rect.height, 16, chosen ? 'rgba(34, 26, 50, 0.96)' : 'rgba(16, 14, 30, 0.9)', chosen ? color : 'rgba(255, 255, 255, 0.18)');
+    ctx.restore();
+    panel(ctx, rect.x + 14, rect.y + 14, 26, 24, 6, 'rgba(255, 230, 190, 0.92)');
+    text(ctx, index === 0 ? 'Q' : 'W', rect.x + 27, rect.y + 31, 14, '#1a1424', 'center');
+    text(ctx, omen.name, rect.x + 52, rect.y + 34, 22, color, 'left', SERIF);
+    text(ctx, 'RISK', rect.x + rect.width - 68, rect.y + 31, 11, DIM, 'right');
+    riskDots(ctx, omen.risk, rect.x + rect.width - 56, rect.y + 27, '#ff7a6a');
+    ctx.font = `normal 15px ${SANS}`;
+    ctx.fillStyle = PALE;
+    ctx.textAlign = 'left';
+    wrap(ctx, omen.text, rect.x + 18, rect.y + 64, rect.width - 36, 19);
+    text(ctx, 'REWARD', rect.x + 18, rect.y + 116, 11, DIM);
+    text(ctx, omen.reward, rect.x + 76, rect.y + 117, 14, '#8fe0a0');
+    if (chosen) text(ctx, 'CHOSEN', rect.x + rect.width - 18, rect.y + 117, 12, color, 'right');
+  });
+}
+
 function drawBoonChoice(ctx, state, ui) {
-  veil(ctx, 0.55);
-  drawWatchLog(ctx, state, VIEW.width / 2, 42, 46, 30, state.night + 1);
-  text(ctx, `NIGHT ${state.night} SURVIVED`, VIEW.width / 2, 132, 52, GOLD, 'center', SERIF);
-  text(ctx, `+${formatScore(state.clearBonus ?? 0)} dawn-break bonus  ·  score ${formatScore(state.score)}  ·  lantern ${Math.ceil(state.lantern.light)}`, VIEW.width / 2, 170, 18, PALE, 'center', SANS, 'normal');
-  text(ctx, 'Choose a boon for the night ahead', VIEW.width / 2, 228, 24, PALE, 'center', SERIF, 'italic');
+  veil(ctx, 0.58);
+  drawWatchLog(ctx, state, VIEW.width / 2, 40, 46, 30, state.night + 1);
+  text(ctx, `NIGHT ${state.night} SURVIVED`, VIEW.width / 2, 118, 48, GOLD, 'center', SERIF);
+  text(ctx, `+${formatScore(state.clearBonus ?? 0)} dawn-break bonus  ·  score ${formatScore(state.score)}  ·  lantern ${Math.ceil(state.lantern.light)}`, VIEW.width / 2, 154, 17, PALE, 'center', SANS, 'normal');
+  text(ctx, '1 · CHOOSE A BOON', 40, 206, 16, GOLD);
+  text(ctx, '1 · 2 · 3', 780, 206, 13, DIM, 'right');
+  drawTideChoice(ctx, state);
   const rects = boonCardRects(state.offer.length);
   state.offer.forEach((boon, index) => {
     const rect = rects[index];
@@ -306,32 +378,82 @@ function drawBoonChoice(ctx, state, ui) {
     halo.addColorStop(1, `rgba(${glow}, 0)`);
     ctx.fillStyle = halo;
     ctx.fillRect(rect.x, y + 14, rect.width, 120);
-    drawIcon(ctx, boon.icon, rect.x + rect.width / 2, y + 74, 56, accent);
-    if (boon.rare) text(ctx, 'RARE', rect.x + rect.width - 20, y + 30, 13, accent, 'right');
-    text(ctx, boon.name, rect.x + rect.width / 2, y + 150, 26, PALE, 'center', SERIF);
-    ctx.font = `normal 17px ${SANS}`;
+    drawIcon(ctx, boon.icon, rect.x + rect.width / 2, y + 72, 50, accent);
+    if (boon.rare) text(ctx, 'RARE', rect.x + rect.width - 16, y + 28, 12, accent, 'right');
+    text(ctx, boon.name, rect.x + rect.width / 2, y + 144, 22, PALE, 'center', SERIF);
+    ctx.font = `normal 15px ${SANS}`;
     ctx.fillStyle = DIM;
     ctx.textAlign = 'center';
-    wrap(ctx, boon.text, rect.x + rect.width / 2, y + 184, rect.width - 44, 22);
-    text(ctx, owned > 0 ? `owned ×${owned}` : 'new', rect.x + 20, y + rect.height - 18, 13, owned > 0 ? '#b9a6ff' : '#8fe0a0');
-    text(ctx, `press ${index + 1}`, rect.x + rect.width - 20, y + rect.height - 18, 13, accent, 'right');
+    wrap(ctx, boon.text, rect.x + rect.width / 2, y + 176, rect.width - 36, 20);
+    text(ctx, owned > 0 ? `owned ×${owned}` : 'new', rect.x + 16, y + rect.height - 16, 12, owned > 0 ? '#b9a6ff' : '#8fe0a0');
+    panel(ctx, rect.x + rect.width - 40, y + rect.height - 34, 24, 22, 5, 'rgba(255, 230, 190, 0.92)');
+    text(ctx, `${index + 1}`, rect.x + rect.width - 28, y + rect.height - 18, 13, '#1a1424', 'center');
   });
-  const omen = state.nextOmen;
-  const omenColor = omen ? `hsl(${omen.hue}, 90%, 72%)` : '#ff8aa0';
-  panel(ctx, 240, 566, 800, 74, 16, 'rgba(10, 10, 26, 0.85)', omen ? `hsla(${omen.hue}, 80%, 65%, 0.6)` : 'rgba(255, 110, 130, 0.6)');
-  text(ctx, omen ? 'TOMORROW\'S OMEN' : 'TOMORROW', 270, 594, 13, DIM);
-  text(ctx, omen ? omen.name : state.night + 1 === NIGHTS ? 'The Gloam, Unbound' : 'The Gloam rises', 270, 622, 22, omenColor, 'left', SERIF);
-  ctx.font = `normal 16px ${SANS}`;
-  ctx.fillStyle = PALE;
-  ctx.textAlign = 'left';
-  wrap(ctx, omen ? omen.text : 'A blood moon and no omen: only the Gloam and its brood.', 520, 598, 500, 21);
-  text(ctx, 'Click a card or press 1 · 2 · 3', VIEW.width / 2, 676, 16, DIM, 'center');
+  const night = state.night + 1;
+  const palette = paletteFor(night);
+  const tide = state.nextOmen;
+  panel(ctx, 40, 528, 1200, 64, 16, 'rgba(10, 10, 26, 0.85)', 'rgba(255, 207, 122, 0.35)');
+  text(ctx, 'NEXT', 64, 566, 13, DIM);
+  text(ctx, `NIGHT ${night} OF ${NIGHTS}`, 112, 568, 22, GOLD, 'left', SERIF);
+  text(ctx, palette.name, 330, 567, 17, PALE, 'left', SERIF, 'italic');
+  const tideLine = tide ? `tide: ${tide.name}  ·  reward: ${tide.reward}` : 'no tide: the Gloam rises under a blood moon';
+  text(ctx, tideLine, 1216, 567, 16, tide ? `hsl(${tide.hue}, 90%, 72%)` : '#ff8aa0', 'right');
+  text(ctx, `Pick a tide (Q / W or click), then a boon (1 / 2 / 3 or click) to light night ${night}`, VIEW.width / 2, 634, 16, DIM, 'center');
 }
 
 function drawPause(ctx) {
   veil(ctx, 0.55);
   text(ctx, 'PAUSED', VIEW.width / 2, 330, 64, GOLD, 'center', SERIF);
   text(ctx, 'P or Esc to resume  ·  R to start over  ·  M sound', VIEW.width / 2, 380, 18, PALE, 'center', SANS, 'normal');
+}
+
+const GRADE_COLORS = { S: '#ffd36a', A: '#ffb36a', B: '#9fd6ff', C: '#b9a6ff', D: '#a0a0b0' };
+
+/** The grade medallion: a big letter in a glowing coin, with the watch it was earned on. */
+function drawGrade(ctx, state, x, y) {
+  const grade = watchGrade(state);
+  const color = GRADE_COLORS[grade];
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 30;
+  const coin = ctx.createRadialGradient(x - 20, y - 24, 10, x, y, 86);
+  coin.addColorStop(0, '#fff6dc');
+  coin.addColorStop(1, color);
+  ctx.fillStyle = coin;
+  ctx.beginPath();
+  ctx.arc(x, y, 80, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(80, 50, 20, 0.6)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(x, y, 66, 0, Math.PI * 2);
+  ctx.stroke();
+  text(ctx, grade, x, y + 34, 96, '#3a2410', 'center', SERIF);
+  text(ctx, 'GRADE', x, y + 116, 16, PALE, 'center');
+  text(ctx, `${state.difficulty.name} watch`, x, y + 140, 14, DIM, 'center', SANS, 'normal');
+}
+
+/** The feats of the watch, ticked or open. */
+function drawFeats(ctx, state, x, y) {
+  const feats = watchFeats(state);
+  const earned = feats.filter((feat) => feat.done).length;
+  panel(ctx, x, y, 290, 52 + feats.length * 34, 16, 'rgba(10, 10, 26, 0.88)', 'rgba(255, 207, 122, 0.45)');
+  text(ctx, `FEATS ${earned}/${feats.length}`, x + 18, y + 32, 15, GOLD);
+  feats.forEach((feat, index) => {
+    const row = y + 66 + index * 34;
+    panel(ctx, x + 16, row - 16, 20, 20, 5, feat.done ? '#5fd38a' : 'rgba(255, 255, 255, 0.12)');
+    if (feat.done) {
+      ctx.strokeStyle = '#0b2014';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 21, row - 6);
+      ctx.lineTo(x + 25, row - 1);
+      ctx.lineTo(x + 31, row - 11);
+      ctx.stroke();
+    }
+    text(ctx, feat.name, x + 44, row - 1, 13, feat.done ? PALE : DIM, 'left', SANS, 'normal');
+  });
 }
 
 function drawResults(ctx, state, ui) {
@@ -353,7 +475,9 @@ function drawResults(ctx, state, ui) {
       : `The Wick guttered on night ${state.night}. Dash through danger, not into it.`;
   text(ctx, title, VIEW.width / 2, 120, 60, dawn ? '#ffe2a0' : '#ff9a8a', 'center', SERIF);
   text(ctx, line, VIEW.width / 2, 160, 19, PALE, 'center', SERIF, 'italic');
-  panel(ctx, 320, 188, 640, 420, 22, 'rgba(10, 10, 26, 0.88)', 'rgba(255, 207, 122, 0.45)');
+  drawGrade(ctx, state, 190, 330);
+  drawFeats(ctx, state, 966, 188);
+  panel(ctx, 340, 188, 600, 420, 22, 'rgba(10, 10, 26, 0.88)', 'rgba(255, 207, 122, 0.45)');
   text(ctx, 'SCORE', VIEW.width / 2, 226, 16, DIM, 'center');
   text(ctx, formatScore(state.score), VIEW.width / 2, 282, 58, GOLD, 'center', SERIF);
   if (ui.newBest) text(ctx, '★ NEW BEST ★', VIEW.width / 2, 310, 16, '#8fe0a0', 'center');
@@ -367,19 +491,19 @@ function drawResults(ctx, state, ui) {
   rows.forEach(([label, value], index) => {
     const column = index % 2;
     const row = Math.floor(index / 2);
-    const x = 370 + column * 300;
+    const x = 366 + column * 292;
     const y = 352 + row * 40;
     text(ctx, label, x, y, 15, DIM, 'left', SANS, 'normal');
-    text(ctx, value, x + 240, y, 20, PALE, 'right');
+    text(ctx, value, x + 236, y, 20, PALE, 'right');
   });
-  text(ctx, 'Boons', 370, 444, 15, DIM, 'left', SANS, 'normal');
+  text(ctx, 'Boons', 366, 444, 15, DIM, 'left', SANS, 'normal');
   state.boons.forEach((id, index) => {
     const boon = boonById(id);
-    drawIcon(ctx, boon.icon, 450 + index * 36, 438, 22, boon.rare ? '#c9a6ff' : GOLD);
+    drawIcon(ctx, boon.icon, 440 + index * 36, 438, 22, boon.rare ? '#c9a6ff' : GOLD);
   });
-  if (state.boons.length === 0) text(ctx, 'none yet', 450, 444, 15, DIM, 'left', SANS, 'normal');
+  if (state.boons.length === 0) text(ctx, 'none yet', 440, 444, 15, DIM, 'left', SANS, 'normal');
   text(ctx, 'THE WATCH', VIEW.width / 2, 492, 13, DIM, 'center');
-  drawWatchLog(ctx, state, VIEW.width / 2, 532, 56, 38);
+  drawWatchLog(ctx, state, VIEW.width / 2, 532, 52, 36);
   text(ctx, 'each flame burns as bright as the light the lantern kept at that dawn-break', VIEW.width / 2, 584, 13, DIM, 'center', SANS, 'normal');
   const pulse = 0.55 + 0.45 * Math.sin(ui.clock * 3.2);
   ctx.globalAlpha = pulse;

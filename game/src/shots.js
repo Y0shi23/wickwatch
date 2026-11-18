@@ -34,10 +34,10 @@ export function stageShot(name, world) {
     return { screen: SCREEN_BOON, best: 18250, newBest: false, hover: 1, mouse: null, clock: 1.2 };
   }
   if (name === 'end') {
-    playUntil(world, 1500, 0.55, () => false);
+    playUntil(world, 1500, 0.8, () => false);
     const state = world.state;
     return { screen: SCREEN_OVER, best: Math.max(18250, state.score), newBest: state.score > 18250, hover: -1, mouse: null, clock: 0.9 };
   }
   playUntil(world, 900, 1, (state) => state.night === 7 && state.nightTime >= 22);
-  return { screen: SCREEN_TITLE, best: 18250, newBest: false, hover: -1, mouse: null, clock: 0.5 };
+  return { screen: SCREEN_TITLE, best: 18250, newBest: false, hover: -1, mouse: null, clock: 0.5, difficulty: 1 };
 }

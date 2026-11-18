@@ -1,11 +1,11 @@
 // The rules of the watch: the Wick, the lantern, sparks, ink, embers and flares, and how they all
 // collide. step() advances everything by one fixed step and returns a bitmask of what happened, so
 // the sound and the screens can answer without the rules knowing they exist.
-import { COMBO, EMBER, FLARE, LANTERN, MAX_ENEMIES, NIGHTS, PLAYER, SPARK, VIEW } from './config.js';
+import { COMBO, DIFFICULTIES, EMBER, FLARE, LANTERN, MAX_ENEMIES, NIGHTS, PLAYER, SPARK, VIEW } from './config.js';
 import { BRUTE, ENEMY_KINDS, GLOAM, SHADE, makeEnemy, updateEnemy } from './enemies.js';
 import { planNight } from './waves.js';
 import { baseMods, drawBoons, takeBoon } from './boons.js';
-import { drawOmen, omenEffects } from './omens.js';
+import { drawOmenChoices, omenEffects } from './omens.js';
 import { createEffects } from './particles.js';
 
 export const EV_SHOOT = 1;
@@ -39,8 +39,16 @@ export function glowRadius(lantern) {
   return (LANTERN.glowMin + (LANTERN.glowMax - LANTERN.glowMin) * share) * (lantern.glowScale ?? 1);
 }
 
-function freshState() {
+/** The difficulty with this id (Keeper when unknown). */
+export function difficultyById(id) {
+  return DIFFICULTIES.find((entry) => entry.id === id) ?? DIFFICULTIES[1];
+}
+
+function freshState(difficulty) {
   return {
+    difficulty,
+    omenOffer: [],
+    gloamsBanished: 0,
     night: 0,
     phase: 'fight',
     time: 0,
@@ -99,14 +107,16 @@ function freshState() {
 /** A world for one watch: `random` drives the rules, `fxRandom` only the effects. */
 export function createWorld(random, fxRandom) {
   const fx = createEffects(fxRandom);
-  let state = freshState();
+  let state = freshState(difficultyById('keeper'));
   let events = 0;
   const hatch = [];
 
   function spawn(kind, x, y) {
     const enemy = makeEnemy(kind, x, y, state.night, random);
     enemy.id = state.nextId++;
-    enemy.speed *= state.effects.speed;
+    enemy.speed *= state.effects.speed * state.difficulty.speed;
+    enemy.hp = Math.max(1, Math.round(enemy.hp * state.difficulty.hp));
+    enemy.maxHp = enemy.hp;
     if (state.effects.frail && kind === SHADE) {
       enemy.hp = Math.max(1, enemy.hp - 1);
       enemy.maxHp = enemy.hp;
@@ -140,15 +150,16 @@ export function createWorld(random, fxRandom) {
     state.banner = { text: `NIGHT ${night}`, sub, time: 2.6 };
   }
 
-  function reset() {
-    state = freshState();
+  /** Begin a new watch at difficulty `difficultyId` (gentle, keeper or embermad). */
+  function reset(difficultyId = 'keeper') {
+    state = freshState(difficultyById(difficultyId));
     fx.clear();
     startNight(1);
   }
 
   function hurtLantern(amount) {
     const lantern = state.lantern;
-    lantern.light = Math.max(0, lantern.light - amount);
+    lantern.light = Math.max(0, lantern.light - amount * state.difficulty.lanternDamage);
     lantern.hurt = 0.35;
     state.flash = Math.max(state.flash, 0.25);
     state.shake = Math.max(state.shake, 6);
@@ -212,7 +223,7 @@ export function createWorld(random, fxRandom) {
     state.combo += 1;
     state.comboTimer = COMBO.window;
     state.bestCombo = Math.max(state.bestCombo, state.combo);
-    const points = Math.round(spec.score * comboMultiplier(state.combo) * state.effects.score);
+    const points = Math.round(spec.score * comboMultiplier(state.combo) * state.effects.score * state.difficulty.score);
     state.score += points;
     state.kills += 1;
     if (state.effects.feed > 0) state.lantern.light = Math.min(state.lantern.maxLight, state.lantern.light + state.effects.feed);
@@ -228,6 +239,7 @@ export function createWorld(random, fxRandom) {
     }
     if (enemy.kind === GLOAM) {
       state.boss = null;
+      state.gloamsBanished += 1;
       state.shake = 18;
       state.flash = 0.6;
       events |= EV_BOSS_DOWN;
@@ -526,12 +538,13 @@ export function createWorld(random, fxRandom) {
 
   function endNight() {
     state.phase = 'clear';
-    const bonus = 100 * state.night + Math.round(state.lantern.light);
+    const bonus = Math.round((100 * state.night + state.lantern.light) * state.effects.dawn * state.difficulty.score);
     state.score += bonus;
     state.globs.length = 0;
     state.sparks.length = 0;
     state.log.push({ night: state.night, light: state.lantern.light / state.lantern.maxLight, omen: state.omen?.id ?? null, kept: true });
-    state.nextOmen = drawOmen(state.night + 1, random);
+    state.omenOffer = drawOmenChoices(state.night + 1, random);
+    state.nextOmen = state.omenOffer[0] ?? null;
     if (state.night >= NIGHTS) {
       state.over = END_DAWN;
       events |= EV_DAWN | EV_OVER;
@@ -608,6 +621,12 @@ export function createWorld(random, fxRandom) {
     return events;
   }
 
+  /** Pick tide `index` of the two offered for the coming night. */
+  function chooseOmen(index) {
+    if (state.phase !== 'clear' || index < 0 || index >= state.omenOffer.length) return;
+    state.nextOmen = state.omenOffer[index];
+  }
+
   /** Keep boon `id` from the offer and begin the next night. */
   function chooseBoon(id) {
     if (state.phase !== 'clear' || state.over !== null) return;
@@ -623,6 +642,7 @@ export function createWorld(random, fxRandom) {
     fx,
     reset,
     step,
+    chooseOmen,
     chooseBoon,
   };
 }

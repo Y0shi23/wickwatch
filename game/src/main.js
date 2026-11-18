@@ -3,7 +3,7 @@
 //
 // ?seed=N fixes the nights. ?shot=title|play|boon|end (with &seed=N) stages that scene instead of
 // running the loop, paints it twice and sets window.__shotReady for a screenshot.
-import { BEST_KEY, STEP } from './config.js';
+import { BEST_KEY, DIFFICULTIES, STEP } from './config.js';
 import { createRandom } from './rng.js';
 import {
   createWorld, EV_BOSS, EV_BOSS_DOWN, EV_DASH, EV_DAWN, EV_EMBER, EV_FLARE, EV_GLOB, EV_HIT, EV_KILL,
@@ -13,7 +13,12 @@ import { createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { autopilot } from './autopilot.js';
 import { createRenderer, SCREEN_BOON, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
-import { boonCardRects } from './hud.js';
+import { boonCardRects, difficultyChipRects, tideCardRects } from './hud.js';
+
+/** The index of the rectangle under (x, y), or -1. */
+function rectUnder(rects, x, y) {
+  return rects.findIndex((rect) => x >= rect.x && x <= rect.x + rect.width && y >= rect.y - 8 && y <= rect.y + rect.height);
+}
 import { stageShot } from './shots.js';
 
 /** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped. */
@@ -68,7 +73,7 @@ const EVENT_SOUNDS = [
 function runGame() {
   const input = createInput(canvas, renderer.toWorld);
   const audio = createAudio();
-  const ui = { screen: SCREEN_TITLE, best: readBest(), newBest: false, hover: -1, mouse: input.mouse, clock: 0, muted: false };
+  const ui = { screen: SCREEN_TITLE, best: readBest(), newBest: false, hover: -1, mouse: input.mouse, clock: 0, muted: false, difficulty: 1 };
   let accumulator = 0;
   let last = performance.now();
   let night = 0;
@@ -78,13 +83,27 @@ function runGame() {
   }
 
   function begin() {
-    world.reset();
+    world.reset(DIFFICULTIES[ui.difficulty].id);
     accumulator = 0;
     night = 1;
     ui.screen = SCREEN_PLAY;
     ui.newBest = false;
     audio.play('night');
-    announce('Night 1. Keep the lantern lit.');
+    announce(`Night 1, ${DIFFICULTIES[ui.difficulty].name} watch. Keep the lantern lit.`);
+  }
+
+  function pickDifficulty(index) {
+    ui.difficulty = Math.max(0, Math.min(DIFFICULTIES.length - 1, index));
+    audio.play('click');
+    announce(`${DIFFICULTIES[ui.difficulty].name} watch.`);
+  }
+
+  function pickTide(index) {
+    const offer = world.state.omenOffer;
+    if (index < 0 || index >= offer.length) return;
+    world.chooseOmen(index);
+    audio.play('click');
+    announce(`Tomorrow's tide: ${offer[index].name}.`);
   }
 
   function finish() {
@@ -117,7 +136,11 @@ function runGame() {
       if (entry.action !== 'blur') audio.wake();
       if (entry.action === 'mute') ui.muted = audio.toggle();
       if (ui.screen === SCREEN_TITLE) {
-        if (entry.action === 'confirm' || entry.action === 'click') {
+        const chip = entry.action === 'click' ? rectUnder(difficultyChipRects(), entry.x, entry.y) : -1;
+        if (entry.action.startsWith('choose')) pickDifficulty(Number(entry.action.slice(6)) - 1);
+        else if (entry.code === 'ArrowLeft' || entry.code === 'ArrowRight') pickDifficulty(ui.difficulty + (entry.code === 'ArrowLeft' ? -1 : 1));
+        else if (chip >= 0) pickDifficulty(chip);
+        else if (entry.action === 'confirm' || entry.action === 'click') {
           audio.startMusic();
           begin();
         }
@@ -127,7 +150,10 @@ function runGame() {
         if (entry.action === 'pause' || entry.action === 'back' || entry.action === 'confirm') ui.screen = SCREEN_PLAY;
         else if (entry.action === 'restart') begin();
       } else if (ui.screen === SCREEN_BOON) {
-        if (entry.action.startsWith('choose')) choose(Number(entry.action.slice(6)) - 1);
+        const tide = entry.action === 'click' ? rectUnder(tideCardRects(world.state.omenOffer.length), entry.x, entry.y) : -1;
+        if (entry.code === 'KeyQ' || entry.code === 'KeyW') pickTide(entry.code === 'KeyQ' ? 0 : 1);
+        else if (entry.action.startsWith('choose')) choose(Number(entry.action.slice(6)) - 1);
+        else if (tide >= 0) pickTide(tide);
         else if (entry.action === 'click') choose(cardUnder(entry.x, entry.y));
       } else if (ui.screen === SCREEN_OVER) {
         if (entry.action === 'confirm' || entry.action === 'click' || entry.action === 'restart') begin();

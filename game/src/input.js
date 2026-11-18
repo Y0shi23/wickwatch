@@ -28,8 +28,7 @@ export function createInput(canvas, toWorld) {
     if (MOVE_KEYS[event.code] || ACTION_KEYS[event.code]) event.preventDefault();
     if (event.repeat) return;
     held.add(event.code);
-    const action = ACTION_KEYS[event.code];
-    if (action) queue.push({ action });
+    queue.push({ action: ACTION_KEYS[event.code] ?? 'key', code: event.code });
   });
   window.addEventListener('keyup', (event) => held.delete(event.code));
   window.addEventListener('blur', () => {

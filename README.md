@@ -13,7 +13,7 @@
 - **Flare** right click / E: once embers have charged it, a ring of light sweeps the dark
 - **Pause** P / Esc · **sound** M · **restart** R (paused) or Enter (results)
 
-Five kinds of Murk (Murkmoth, Needlefin, Tarbulk, Inkwisp and the Gloam, twice), seventeen boons (four of them rare: Phoenix Wick, Lantern Choir, Mirror Sparks, Emberheart), six omens that twist the nights after the first (Calm Water, Swarm Tide, Fast Water, Fogbank, Ink Rain, Hungry Dark) and are foretold at each dawn-break, a sea that changes colour with every tide and turns to a blood moon when a Gloam rises, combos, embers, a lantern that dims as it is hurt, a watch log of every night, synthesised sound and music, and a best score kept in the browser. Plain static files under `game/`, no library, no build step and no network request.
+Five kinds of Murk (Murkmoth, Needlefin, Tarbulk, Inkwisp and the Gloam, twice), seventeen boons (four of them rare: Phoenix Wick, Lantern Choir, Mirror Sparks, Emberheart), six tides that twist the nights after the first (Calm Water, Swarm Tide, Fast Water, Fogbank, Ink Rain, Hungry Dark): at each dawn-break you choose one of two, weighing its risk against its reward, three watches to choose from on the title (Gentle, Keeper, Ember-Mad), a grade from S to D and six feats for every watch, a sea that changes colour with every tide and turns to a blood moon when a Gloam rises, combos, embers, a lantern that dims as it is hurt, a watch log of every night, synthesised sound and music, and a best score kept in the browser. Plain static files under `game/`, no library, no build step and no network request.
 
 ## Run it
 
